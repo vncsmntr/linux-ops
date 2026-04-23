@@ -3,7 +3,9 @@
 Centralized automation hub for Linux infrastructure. Contains provisioning scripts, security hardening, and system maintenance tools compatible with Ubuntu and RHEL-based systems.
 
 ## 🚀 Usage Pattern
-Execute scripts via curl:
+
+Execute scripts directly via curl:
+
 `curl -sSL https://raw.githubusercontent.com/vncsmntr/linux-ops/main/[folder]/[script].sh | sudo bash`
 
 ## 📂 Project Structure
