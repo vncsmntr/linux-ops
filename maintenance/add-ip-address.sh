@@ -7,30 +7,31 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 echo "--- Available Network Interfaces ---"
-nmcli device status
+nmcli -t -f DEVICE,TYPE,STATE device status
 echo "------------------------------------"
 
-# Using /dev/tty to allow input even when piped from curl
+# Use /dev/tty to ensure input works when piped
 exec 3<&1
 exec < /dev/tty
 
-# 1. Ask for the interface name
-read -p "Enter the interface name (e.g., ens160, eth0): " IFACE
+# 1. Ask for the interface name and trim whitespace
+read -p "Enter the interface name: " RAW_IFACE
+IFACE=$(echo "$RAW_IFACE" | xargs)
 
-# Check if the interface exists
-if ! nmcli device show "$IFACE" > /dev/null 2>&1; then
-    echo "Error: Interface $IFACE not found."
+# Check if the interface exists in the system
+if ! ip link show "$IFACE" > /dev/null 2>&1; then
+    echo "Error: Interface '$IFACE' not found in ip link."
     exit 1
 fi
 
 # 2. Ask for IP address and CIDR
-read -p "Enter the static IP with CIDR (e.g., 192.168.1.10/24): " IP_ADDR
+read -p "Enter the static IP with CIDR (e.g., 10.0.0.50/24): " IP_ADDR
 
 # 3. Ask for Gateway
-read -p "Enter the Gateway (e.g., 192.168.1.1): " GATEWAY
+read -p "Enter the Gateway (e.g., 10.0.0.1): " GATEWAY
 
 # 4. Ask for DNS
-read -p "Enter DNS server (press enter for 8.8.8.8): " DNS_SERVER
+read -p "Enter DNS server (default 8.8.8.8): " DNS_SERVER
 DNS_SERVER=${DNS_SERVER:-8.8.8.8}
 
 # Restore stdin
@@ -39,23 +40,29 @@ exec 3<&-
 
 echo "🚀 Configuring interface $IFACE..."
 
-# Logic to find or create connection
+# Find connection name associated with the device
+# We use -g (get) to fetch the connection name directly
 CONN_NAME=$(nmcli -g GENERAL.CONNECTION device show "$IFACE" | head -n 1)
 
-if [ -z "$CONN_NAME" ] || [ "$CONN_NAME" == "--" ]; then
-    echo "No active connection found for $IFACE. Creating a new one..."
+# If connection is empty or "--", we create a new one
+if [ -z "$CONN_NAME" ] || [ "$CONN_NAME" == "--" ] || [ "$CONN_NAME" == "" ]; then
+    echo "No active connection profile for $IFACE. Creating 'static-$IFACE'..."
     CONN_NAME="static-$IFACE"
+    # Delete if a profile with this name already exists to avoid conflicts
+    nmcli con del "$CONN_NAME" > /dev/null 2>&1
     nmcli con add type ethernet con-name "$CONN_NAME" ifname "$IFACE"
 fi
 
+# Apply configurations
 nmcli con mod "$CONN_NAME" ipv4.addresses "$IP_ADDR"
 nmcli con mod "$CONN_NAME" ipv4.gateway "$GATEWAY"
 nmcli con mod "$CONN_NAME" ipv4.dns "$DNS_SERVER"
 nmcli con mod "$CONN_NAME" ipv4.method manual
 nmcli con mod "$CONN_NAME" connection.autoconnect yes
 
-echo "🔄 Restarting interface $IFACE..."
+# Bring the connection up
+echo "🔄 Activating connection $CONN_NAME..."
 nmcli con up "$CONN_NAME"
 
-echo "✅ Success! Network configuration applied to $IFACE."
+echo "✅ Success! Details for $IFACE:"
 nmcli device show "$IFACE"
