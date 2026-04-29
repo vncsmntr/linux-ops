@@ -1,68 +1,54 @@
 #!/bin/bash
 
+# Function to show usage
+usage() {
+    echo "Usage: curl -sSL [URL] | sudo bash -s -- <interface> <ip/cidr> <gateway> [dns]"
+    echo "Example: curl -sSL [URL] | sudo bash -s -- ens35 192.168.1.50/24 192.168.1.1 8.8.8.8"
+    exit 1
+}
+
 # Ensure the script is running as root
 if [[ $EUID -ne 0 ]]; then
-   echo "This script must be run as root (use sudo)"
+   echo "Error: This script must be run as root (use sudo)"
    exit 1
 fi
 
-echo "--- Available Network Interfaces ---"
-nmcli -t -f DEVICE,TYPE,STATE device status
-echo "------------------------------------"
+# Map arguments
+IFACE=$1
+IP_ADDR=$2
+GATEWAY=$3
+DNS_SERVER=${4:-8.8.8.8}
 
-# Use /dev/tty to ensure input works when piped
-exec 3<&1
-exec < /dev/tty
+# Check for mandatory arguments
+if [[ -z "$IFACE" || -z "$IP_ADDR" || -z "$GATEWAY" ]]; then
+    usage
+fi
 
-# 1. Ask for the interface name and trim whitespace
-read -p "Enter the interface name: " RAW_IFACE
-IFACE=$(echo "$RAW_IFACE" | xargs)
+echo "🚀 Starting network configuration for $IFACE..."
 
-# Check if the interface exists in the system
+# Verify if interface exists
 if ! ip link show "$IFACE" > /dev/null 2>&1; then
-    echo "Error: Interface '$IFACE' not found in ip link."
+    echo "Error: Interface $IFACE not found."
     exit 1
 fi
 
-# 2. Ask for IP address and CIDR
-read -p "Enter the static IP with CIDR (e.g., 10.0.0.50/24): " IP_ADDR
-
-# 3. Ask for Gateway
-read -p "Enter the Gateway (e.g., 10.0.0.1): " GATEWAY
-
-# 4. Ask for DNS
-read -p "Enter DNS server (default 8.8.8.8): " DNS_SERVER
-DNS_SERVER=${DNS_SERVER:-8.8.8.8}
-
-# Restore stdin
-exec <&3
-exec 3<&-
-
-echo "🚀 Configuring interface $IFACE..."
-
-# Find connection name associated with the device
-# We use -g (get) to fetch the connection name directly
+# Detect or create NetworkManager connection
 CONN_NAME=$(nmcli -g GENERAL.CONNECTION device show "$IFACE" | head -n 1)
 
-# If connection is empty or "--", we create a new one
-if [ -z "$CONN_NAME" ] || [ "$CONN_NAME" == "--" ] || [ "$CONN_NAME" == "" ]; then
-    echo "No active connection profile for $IFACE. Creating 'static-$IFACE'..."
+if [[ -z "$CONN_NAME" || "$CONN_NAME" == "--" ]]; then
     CONN_NAME="static-$IFACE"
-    # Delete if a profile with this name already exists to avoid conflicts
     nmcli con del "$CONN_NAME" > /dev/null 2>&1
     nmcli con add type ethernet con-name "$CONN_NAME" ifname "$IFACE"
 fi
 
-# Apply configurations
+# Apply settings
 nmcli con mod "$CONN_NAME" ipv4.addresses "$IP_ADDR"
 nmcli con mod "$CONN_NAME" ipv4.gateway "$GATEWAY"
 nmcli con mod "$CONN_NAME" ipv4.dns "$DNS_SERVER"
 nmcli con mod "$CONN_NAME" ipv4.method manual
 nmcli con mod "$CONN_NAME" connection.autoconnect yes
 
-# Bring the connection up
-echo "🔄 Activating connection $CONN_NAME..."
+# Apply changes
 nmcli con up "$CONN_NAME"
 
-echo "✅ Success! Details for $IFACE:"
-nmcli device show "$IFACE"
+echo "✅ Success! IP $IP_ADDR applied to $IFACE."
