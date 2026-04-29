@@ -3,7 +3,7 @@
 # Function to show usage
 usage() {
     echo "Usage: curl -sSL [URL] | sudo bash -s -- <interface> <ip/cidr> <gateway> [dns]"
-    echo "Example: curl -sSL [URL] | sudo bash -s -- ens35 192.168.1.50/24 192.168.1.1 8.8.8.8"
+    echo "Example: curl -sSL [URL] | sudo bash -s -- ens35 10.181.214.132/25 10.181.214.254 10.181.214.130"
     exit 1
 }
 
@@ -24,6 +24,10 @@ if [[ -z "$IFACE" || -z "$IP_ADDR" || -z "$GATEWAY" ]]; then
     usage
 fi
 
+echo "--- Available Network Interfaces ---"
+nmcli -t -f DEVICE,TYPE,STATE device status
+echo "------------------------------------"
+
 echo "🚀 Starting network configuration for $IFACE..."
 
 # Verify if interface exists
@@ -36,6 +40,7 @@ fi
 CONN_NAME=$(nmcli -g GENERAL.CONNECTION device show "$IFACE" | head -n 1)
 
 if [[ -z "$CONN_NAME" || "$CONN_NAME" == "--" ]]; then
+    echo "No active profile for $IFACE. Creating 'static-$IFACE'..."
     CONN_NAME="static-$IFACE"
     nmcli con del "$CONN_NAME" > /dev/null 2>&1
     nmcli con add type ethernet con-name "$CONN_NAME" ifname "$IFACE"
@@ -49,6 +54,7 @@ nmcli con mod "$CONN_NAME" ipv4.method manual
 nmcli con mod "$CONN_NAME" connection.autoconnect yes
 
 # Apply changes
+echo "🔄 Activating connection $CONN_NAME..."
 nmcli con up "$CONN_NAME"
 
 echo "✅ Success! IP $IP_ADDR applied to $IFACE."
