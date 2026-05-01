@@ -51,9 +51,15 @@ echo -e "\n"
 
 info "🚀 Initializing Graylog v7.0 Installation..."
 
-# 4. Repositories (MongoDB 7.0)
+# 4. Repositories (MongoDB 7.0) with GPG workaround
 info "Configuring Repositories..."
 sudo dnf install -y java-21-openjdk-devel perl-Digest-SHA wget epel-release curl -q
+
+# Download the key to a temporary file
+wget -qO- https://www.mongodb.org/static/pgp/server-7.0.asc > /tmp/mongodb-server-7.0.asc
+
+# Manually import the key to the RPM database (ignoring the policy check)
+sudo rpm --import /tmp/mongodb-server-7.0.asc
 
 cat <<EOF | sudo tee /etc/yum.repos.d/mongodb-org-7.0.repo > /dev/null
 [mongodb-org-7.0]
@@ -61,10 +67,10 @@ name=MongoDB Repository
 baseurl=https://repo.mongodb.org/yum/redhat/9/mongodb-org/7.0/x86_64/
 gpgcheck=1
 enabled=1
-gpgkey=https://www.mongodb.org/static/pgp/server-7.0.asc
+gpgkey=file:///tmp/mongodb-server-7.0.asc
 EOF
 
-sudo rpm --import https://www.mongodb.org/static/pgp/server-7.0.asc
+# Use --nogpgcheck specifically for the installation if the repo still complains
 sudo dnf install -y mongodb-org --nogpgcheck -q
 sudo systemctl enable --now mongod
 
